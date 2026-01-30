@@ -17,14 +17,41 @@ if (!process.env.MONGODB_URI) {
     console.error('\nERROR: MONGODB_URI is not set.\n- In Render: go to your Service → Environment → Add Environment Variable named MONGODB_URI\n- In local dev: set it in backend/.env (or export in your shell)\nMake sure the value is a valid MongoDB connection string (Atlas recommended).\n');
     process.exit(1);
 }
-console.log('Connecting to MongoDB...');
-mongoose.connect(process.env.MONGODB_URI)
-    .then(() => console.log('Connected to MongoDB'))
-    .catch(err => {
-        console.error('Could not connect to MongoDB:', err);
-        console.error('Hint: Verify MONGODB_URI, ensure your DB allows connections from Render (or set IP access for Atlas), and that credentials are correct.');
-        process.exit(1);
-    });
+
+const mongooseOptions = {
+    // timeouts to fail fast if DB inaccessible
+    connectTimeoutMS: 10000,
+    serverSelectionTimeoutMS: 10000,
+};
+
+// Retry connecting to MongoDB with exponential backoff-like behavior
+const connectWithRetry = async (retries = 5, delay = 5000) => {
+    for (let i = 1; i <= retries; i++) {
+        try {
+            console.log(`Attempting MongoDB connection (try ${i}/${retries})...`);
+            await mongoose.connect(process.env.MONGODB_URI, mongooseOptions);
+            console.log('Connected to MongoDB');
+            // Seed products only after a successful connection
+            try {
+                await seedProducts();
+            } catch (err) {
+                console.error('Seeding after connect failed:', err);
+            }
+            return;
+        } catch (err) {
+            console.error(`MongoDB connection attempt ${i} failed:`, err.message || err);
+            if (i === retries) {
+                console.error('All MongoDB connection attempts failed. The app will continue but DB features will be unavailable.');
+            } else {
+                console.log(`Retrying in ${delay / 1000}s...`);
+                await new Promise(res => setTimeout(res, delay));
+            }
+        }
+    }
+};
+
+connectWithRetry();
+
 
 // Models
 const UserSchema = new mongoose.Schema({
@@ -59,6 +86,10 @@ const initialProducts = [
 
 // Seed Products
 const seedProducts = async () => {
+    if (mongoose.connection.readyState !== 1) {
+        console.warn('Skipping product seeding because MongoDB is not connected.');
+        return;
+    }
     try {
         await Product.deleteMany({}); // Clear existing products to refresh with new images/items
         await Product.insertMany(initialProducts);
@@ -67,7 +98,8 @@ const seedProducts = async () => {
         console.error('Error seeding products:', err);
     }
 };
-seedProducts();
+// Note: seeding is invoked after a successful DB connection in connectWithRetry()
+
 
 // Routes
 app.post('/api/register', async (req, res) => {
