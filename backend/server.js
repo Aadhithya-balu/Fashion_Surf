@@ -4,6 +4,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const path = require('path');
 
 dotenv.config();
 
@@ -90,6 +91,17 @@ app.get('/api/products', async (req, res) => {
     const products = await Product.find();
     res.json(products);
 });
+
+// Health check for root path
+app.get('/', (req, res) => res.send('API is running'));
+
+// Serve static frontend in production (optional)
+if (process.env.NODE_ENV === 'production') {
+    app.use(express.static(path.join(__dirname, '../fashion-surf/dist')));
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(__dirname, '../fashion-surf/dist', 'index.html'));
+    });
+}
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
