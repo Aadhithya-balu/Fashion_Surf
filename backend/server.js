@@ -14,8 +14,23 @@ app.use(cors());
 
 // MongoDB Connection
 if (!process.env.MONGODB_URI) {
-    console.error('\nERROR: MONGODB_URI is not set.\n- In Render: go to your Service → Environment → Add Environment Variable named MONGODB_URI\n- In local dev: set it in backend/.env (or export in your shell)\nMake sure the value is a valid MongoDB connection string (Atlas recommended).\n');
-    process.exit(1);
+    if (process.env.NODE_ENV === 'production') {
+        console.error('\nERROR: MONGODB_URI is not set.\n- In Render: go to your Service → Environment → Add Environment Variable named MONGODB_URI\n- In local dev: set it in backend/.env (or export in your shell)\nMake sure the value is a valid MongoDB connection string (Atlas recommended).\n');
+        process.exit(1);
+    } else {
+        console.warn('\nWARNING: MONGODB_URI is not set. Using local fallback mongodb://127.0.0.1:27017/fashion-surf for development.\nSet MONGODB_URI environment variable to use a different DB.\n');
+        process.env.MONGODB_URI = 'mongodb://127.0.0.1:27017/fashion-surf';
+    }
+}
+
+if (!process.env.JWT_SECRET) {
+    if (process.env.NODE_ENV === 'production') {
+        console.error('\nERROR: JWT_SECRET is not set.\n- Add JWT_SECRET to your Environment variables in the hosting provider.\n');
+        process.exit(1);
+    } else {
+        console.warn('Warning: JWT_SECRET not set. Using default development secret. Do NOT use in production.');
+        process.env.JWT_SECRET = 'dev_jwt_secret';
+    }
 }
 
 const mongooseOptions = {
