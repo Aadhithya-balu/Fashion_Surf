@@ -13,9 +13,18 @@ app.use(express.json());
 app.use(cors());
 
 // MongoDB Connection
+if (!process.env.MONGODB_URI) {
+    console.error('\nERROR: MONGODB_URI is not set.\n- In Render: go to your Service → Environment → Add Environment Variable named MONGODB_URI\n- In local dev: set it in backend/.env (or export in your shell)\nMake sure the value is a valid MongoDB connection string (Atlas recommended).\n');
+    process.exit(1);
+}
+console.log('Connecting to MongoDB...');
 mongoose.connect(process.env.MONGODB_URI)
     .then(() => console.log('Connected to MongoDB'))
-    .catch(err => console.error('Could not connect to MongoDB', err));
+    .catch(err => {
+        console.error('Could not connect to MongoDB:', err);
+        console.error('Hint: Verify MONGODB_URI, ensure your DB allows connections from Render (or set IP access for Atlas), and that credentials are correct.');
+        process.exit(1);
+    });
 
 // Models
 const UserSchema = new mongoose.Schema({
