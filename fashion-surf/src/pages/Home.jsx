@@ -3,7 +3,8 @@ import axios from 'axios';
 import { ShoppingCart, Plus } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 
-const API_URL = import.meta.env.VITE_API_URL;
+// Use VITE_API_URL if provided at build time, otherwise fall back to your deployed backend
+const API_URL = import.meta.env.VITE_API_URL ?? 'https://fashion-surf-3.onrender.com';
 
 const Home = () => {
     const [products, setProducts] = useState([]);

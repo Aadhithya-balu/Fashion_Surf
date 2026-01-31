@@ -3,7 +3,8 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, Loader2 } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_API_URL;
+// Use VITE_API_URL if provided at build time, otherwise fall back to your deployed backend
+const API_URL = import.meta.env.VITE_API_URL ?? 'https://fashion-surf-3.onrender.com';
 
 const Login = () => {
     const [isLogin, setIsLogin] = useState(true);
