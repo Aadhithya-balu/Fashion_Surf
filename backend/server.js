@@ -4,7 +4,6 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const path = require('path');
 
 dotenv.config();
 
@@ -12,63 +11,61 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// MongoDB Connection
+/* ===========================
+   ENVIRONMENT VALIDATION
+=========================== */
+
 if (!process.env.MONGODB_URI) {
-    if (process.env.NODE_ENV === 'production') {
-        console.error('\nERROR: MONGODB_URI is not set.\n- In Render: go to your Service → Environment → Add Environment Variable named MONGODB_URI\n- In local dev: set it in backend/.env (or export in your shell)\nMake sure the value is a valid MongoDB connection string (Atlas recommended).\n');
-        process.exit(1);
-    } else {
-        console.warn('\nWARNING: MONGODB_URI is not set. Using local fallback mongodb://127.0.0.1:27017/fashion-surf for development.\nSet MONGODB_URI environment variable to use a different DB.\n');
-        process.env.MONGODB_URI = 'mongodb://127.0.0.1:27017/fashion-surf';
-    }
+    console.error(`
+ERROR: MONGODB_URI is not set.
+- Render → Backend Service → Environment → Add MONGODB_URI
+`);
+    process.exit(1);
 }
 
 if (!process.env.JWT_SECRET) {
-    if (process.env.NODE_ENV === 'production') {
-        console.error('\nERROR: JWT_SECRET is not set.\n- Add JWT_SECRET to your Environment variables in the hosting provider.\n');
-        process.exit(1);
-    } else {
-        console.warn('Warning: JWT_SECRET not set. Using default development secret. Do NOT use in production.');
-        process.env.JWT_SECRET = 'dev_jwt_secret';
-    }
+    console.error(`
+ERROR: JWT_SECRET is not set.
+- Render → Backend Service → Environment → Add JWT_SECRET
+`);
+    process.exit(1);
 }
 
+/* ===========================
+   MONGODB CONNECTION
+=========================== */
+
 const mongooseOptions = {
-    // timeouts to fail fast if DB inaccessible
     connectTimeoutMS: 10000,
     serverSelectionTimeoutMS: 10000,
 };
 
-// Retry connecting to MongoDB with exponential backoff-like behavior
 const connectWithRetry = async (retries = 5, delay = 5000) => {
     for (let i = 1; i <= retries; i++) {
         try {
-            console.log(`Attempting MongoDB connection (try ${i}/${retries})...`);
+            console.log(`Attempting MongoDB connection (${i}/${retries})...`);
             await mongoose.connect(process.env.MONGODB_URI, mongooseOptions);
             console.log('Connected to MongoDB');
-            // Seed products only after a successful connection
-            try {
-                await seedProducts();
-            } catch (err) {
-                console.error('Seeding after connect failed:', err);
-            }
+            await seedProducts();
             return;
         } catch (err) {
-            console.error(`MongoDB connection attempt ${i} failed:`, err.message || err);
-            if (i === retries) {
-                console.error('All MongoDB connection attempts failed. The app will continue but DB features will be unavailable.');
-            } else {
+            console.error(`MongoDB attempt ${i} failed:`, err.message);
+            if (i < retries) {
                 console.log(`Retrying in ${delay / 1000}s...`);
                 await new Promise(res => setTimeout(res, delay));
             }
         }
     }
+    console.error('MongoDB connection failed. Exiting.');
+    process.exit(1);
 };
 
 connectWithRetry();
 
+/* ===========================
+   MODELS
+=========================== */
 
-// Models
 const UserSchema = new mongoose.Schema({
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
@@ -87,7 +84,10 @@ const ProductSchema = new mongoose.Schema({
 
 const Product = mongoose.model('Product', ProductSchema);
 
-// Initial Products Data
+/* ===========================
+   PRODUCT SEED
+=========================== */
+
 const initialProducts = [
     { id: 1, name: 'Summer Floral Dress', price: 1200, image: '/images/p1.png', category: 'Dresses' },
     { id: 2, name: 'Classic Denim Jacket', price: 2500, image: '/images/p2.png', category: 'Outwear' },
@@ -99,32 +99,31 @@ const initialProducts = [
     { id: 8, name: 'Knitted Winter Sweater', price: 1800, image: 'https://images.unsplash.com/photo-1434389677669-e08b4cac3105?w=500', category: 'Knitwear' }
 ];
 
-// Seed Products
 const seedProducts = async () => {
-    if (mongoose.connection.readyState !== 1) {
-        console.warn('Skipping product seeding because MongoDB is not connected.');
-        return;
-    }
     try {
-        await Product.deleteMany({}); // Clear existing products to refresh with new images/items
+        await Product.deleteMany({});
         await Product.insertMany(initialProducts);
-        console.log('Products seeded successfully');
+        console.log('Products seeded');
     } catch (err) {
-        console.error('Error seeding products:', err);
+        console.error('Seeding failed:', err.message);
     }
 };
-// Note: seeding is invoked after a successful DB connection in connectWithRetry()
 
+/* ===========================
+   ROUTES
+=========================== */
 
-// Routes
+app.get('/', (req, res) => {
+    res.send('API is running');
+});
+
 app.post('/api/register', async (req, res) => {
     try {
         const { email, password } = req.body;
         const hashedPassword = await bcrypt.hash(password, 10);
-        const user = new User({ email, password: hashedPassword });
-        await user.save();
+        await new User({ email, password: hashedPassword }).save();
         res.status(201).json({ message: 'User registered successfully' });
-    } catch (err) {
+    } catch {
         res.status(400).json({ error: 'Registration failed' });
     }
 });
@@ -133,12 +132,12 @@ app.post('/api/login', async (req, res) => {
     try {
         const { email, password } = req.body;
         const user = await User.findOne({ email });
-        if (!user || !await bcrypt.compare(password, user.password)) {
+        if (!user || !(await bcrypt.compare(password, user.password))) {
             return res.status(400).json({ error: 'Invalid credentials' });
         }
         const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET);
         res.json({ token, email: user.email });
-    } catch (err) {
+    } catch {
         res.status(400).json({ error: 'Login failed' });
     }
 });
@@ -148,16 +147,19 @@ app.get('/api/products', async (req, res) => {
     res.json(products);
 });
 
-// Health check for root path
-app.get('/', (req, res) => res.send('API is running'));
+/* ===========================
+   404 FALLBACK (IMPORTANT)
+=========================== */
 
-// Serve static frontend in production (optional)
-if (process.env.NODE_ENV === 'production') {
-    app.use(express.static(path.join(__dirname, '../fashion-surf/dist')));
-    app.get('*', (req, res) => {
-        res.sendFile(path.join(__dirname, '../fashion-surf/dist', 'index.html'));
-    });
-}
+app.use((req, res) => {
+    res.status(404).json({ message: 'Route not found' });
+});
+
+/* ===========================
+   SERVER START
+=========================== */
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () =>
+    console.log(`Server running on port ${PORT}`)
+);
